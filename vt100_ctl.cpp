@@ -2,9 +2,8 @@
 uint16_t term_colors[8] = {BLACK_16, RED_16, GREEN_16, YELLOW_16, BLUE_16, VIOLET_16, CYAN_16, WHITE_16};
 extern uint16_t bg_color;
 
-//TODO: multi-digit parameters
-//plan: read the whole control code seqence, after "\e[", through a letter.
-char ctlcode[15];
+//TODO: scrolling
+char ctlcode[20];
 
 bool isletter(char c)
 {
@@ -26,7 +25,7 @@ uint8_t read_ctl_code(char* ctlcode)
   ctlcode[ctlcode_len] = 0;
   return ctlcode_len;
 }
-
+/*
 void extract_param(char* ctlcode, uint8_t ctlcode_len, int8_t& param0, int8_t& param1)
 {
   switch(ctlcode_len)
@@ -41,6 +40,30 @@ void extract_param(char* ctlcode, uint8_t ctlcode_len, int8_t& param0, int8_t& p
       param1 = ctlcode[2] - '0';
   }
 }
+*/
+void extract_param(char* ctlcode, uint8_t ctlcode_len, int8_t& param0, int8_t& param1)
+{
+  bool two_param = false;
+  for(uint8_t i=0;i<ctlcode_len-1;i++)
+  {
+    if(ctlcode[i] == ';')
+    {
+      two_param = true;
+      continue;
+    }
+    if(!two_param)
+    {
+      param0 *= 10;
+      param0 += ctlcode[i] - '0';
+    }
+    else
+    {
+      param1 *= 10;
+      param1 += ctlcode[i] - '0';
+    }
+  }
+}
+
 
 void parse_single_m_code(char* ctlcode, uint8_t cmdstart, uint8_t cmdend, Adafruit_TFTLCD &tft)
 {
@@ -79,6 +102,7 @@ void parse_single_m_code(char* ctlcode, uint8_t cmdstart, uint8_t cmdend, Adafru
   
 }
 
+//a control code ending with m can contain multiple sub-codes, separated by ';'.
 void parse_m_code(char* ctlcode, uint8_t ctlcode_len, Adafruit_TFTLCD &tft)
 {
   uint8_t i = 0;
@@ -99,7 +123,7 @@ void parse_ctl_code(Adafruit_TFTLCD &tft)
 {
   uint8_t ctlcode_len = read_ctl_code(ctlcode);
   char ctl_type = ctlcode[ctlcode_len - 1];
-  if(ctl_type >= 'A' && ctl_type <= 'K')
+  if(ctl_type != 'm')
   {
     int8_t param0 = 0;
     int8_t param1 = 0;
@@ -118,6 +142,12 @@ void parse_ctl_code(Adafruit_TFTLCD &tft)
         break;
       case 'D': //left
         moveCursor(-cursor_delta, 0, tft);
+        break;
+      case 'G': //It seems that this big 'G' is used to set column
+        if(param0)
+          setCursorX(param0-1, tft);
+        else
+          setCursorX(0, tft);
         break;
       case 'H': //reset cursor
         if(param0 == 0 || param1 == 0)
@@ -141,9 +171,15 @@ void parse_ctl_code(Adafruit_TFTLCD &tft)
         else
           delCursorRight(tft);
         break;
+      case 'd': //it seems this little 'd' is used to set row
+        if(param0)
+          setCursorY(param0-1, tft);
+        else
+          setCursorY(0, tft);
+        break;
     }
   }
-  else if(ctl_type == 'm')
+  else
   {
     parse_m_code(ctlcode, ctlcode_len, tft);
   }

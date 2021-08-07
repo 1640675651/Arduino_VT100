@@ -2,6 +2,7 @@
 #include "lcd.h"
 #include "vt100_ctl.h"
 
+//#define SUPPORT_SCROLLING
 // global variables
 char char_from_serial = -1;
 uint8_t cursor_x;
@@ -15,7 +16,11 @@ KbdRptParser Prs;
 Adafruit_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
 void setup() {
+  #ifdef SUPPORT_SCROLLING
   Serial.begin(1200);
+  #else
+  Serial.begin(4800);
+  #endif
   lcdinit(tft);
   
   if (Usb.Init() == -1)
@@ -43,12 +48,19 @@ void parse_serial_in()
     Serial.readBytes(&ctlcode, 1); //readBytes has a timeout, which can be used to wait for the next byte
     if(ctlcode == '[')
     {
-      ctlcode = -1;
       parse_ctl_code(tft);
     }
     else if(ctlcode == '(' || ctlcode == ')') //set character set commands, not implemented
     {
       Serial.readBytes(&ctlcode, 1);
+    }
+    else if(ctlcode == 'D') //index: move cursor down and scroll screen up if cursor at the bottom
+    {
+      moveCursorandScroll(1, tft);
+    }
+    else if(ctlcode == 'M') //revindex: move cursor up and scroll screen down if cursor at the top
+    {
+      moveCursorandScroll(-1, tft);
     }
   }
   else if(char_from_serial == 0)// I don't know why the linux machine will send a lot of 0's 
@@ -63,7 +75,7 @@ void parse_serial_in()
   {
     ;
   }
-  else if(char_from_serial >= 14 && char_from_serial <= 31);
+  else if(char_from_serial >= 14 && char_from_serial <= 31);// unimplemented control characters
   else// normal characters
   {
     overWrite(char_from_serial, tft);
@@ -98,5 +110,5 @@ typedef MAX3421e<P7, P9> MAX3421E;
 
 another note:
 Increased SERIAL_RX_BUFFER from 64 to 128 ((Arduino install path/hardware/arduino/avr/cores/arduino/HardwareSerial.h))
-Limited baudrate to 2400
+Limited baudrate to 4800
 */
