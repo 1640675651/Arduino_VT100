@@ -4,6 +4,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_TFTLCD.h>
 #include <pin_magic.h>
+#include "256color.h"
 
 #define LCD_RD   A0
 #define LCD_WR   A1     

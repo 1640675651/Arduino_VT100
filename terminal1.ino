@@ -60,7 +60,9 @@ void parse_serial_in()
     }
     else if(ctlcode == 'M') //revindex: move cursor up and scroll screen down if cursor at the top
     {
+      //Serial.write(19); //pause host serial port
       moveCursorandScroll(-1, tft);
+      //Serial.write(17);
     }
   }
   else if(char_from_serial == 0)// I don't know why the linux machine will send a lot of 0's 
@@ -76,6 +78,17 @@ void parse_serial_in()
     ;
   }
   else if(char_from_serial >= 14 && char_from_serial <= 31);// unimplemented control characters
+  else if(char_from_serial < 0)// UTF-8 characters (unsupported, just ignore)
+  {
+    overWrite(' ', tft);
+    char_from_serial <<= 1; //the first byte of UTF-8 character indicates how many bytes this character has
+    while(char_from_serial & 0b10000000) //the number of bits that are 1 in the beginning is the number of bytes.
+    {
+      while(!Serial.available());
+      Serial.read();
+      char_from_serial <<= 1;
+    }
+  }
   else// normal characters
   {
     overWrite(char_from_serial, tft);

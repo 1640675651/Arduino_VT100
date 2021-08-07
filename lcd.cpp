@@ -1,9 +1,10 @@
 #include "lcd.h"
 #include "lcd_accel.h"
 
+
 uint16_t bg_color = DEFAULT_BG_COLOR;
-uint8_t scroll_top = 0;
-uint8_t scroll_bottom = H_CHARS - 1;
+uint8_t scroll_top = 0;              //inclusive
+uint8_t scroll_bottom = H_CHARS - 1; //inclusive
 uint16_t lineData[W_PIXEL];
 
 volatile uint8_t *csPort, *cdPort, *wrPort, *rdPort;
@@ -76,10 +77,10 @@ void moveCursor(int8_t dX, int8_t dY, Adafruit_TFTLCD &tft)
     dX = W_CHARS - 1;
   //Y += dY; same as above
   dY += Y;
-  if(dY<0)
-    dY = 0;
-  else if(dY>=H_CHARS)
-    dY = H_CHARS - 1;
+  if(dY<scroll_top)
+    dY = scroll_top;
+  else if(dY>scroll_bottom)
+    dY = scroll_bottom;
   setCursorwithXY(dX, dY, tft);
 }
 
@@ -155,7 +156,7 @@ void moveCursorandScroll(int8_t dY, Adafruit_TFTLCD &tft)
     }
     else if(endY < scroll_top) //scroll down
     {
-      scrollDown(-endY, tft);
+      scrollDown(scroll_top - endY, tft);
     }
   }
   moveCursor(0, dY, tft);
@@ -195,11 +196,7 @@ void copyLine(uint8_t srcy, uint8_t tgty, Adafruit_TFTLCD &tft)
 {
   readLineFast(srcy, tft);
   tft.setAddrWindow(0, tgty, W_PIXEL, tgty);
-  tft.pushColors(lineData, W_PIXEL, true); //modified the second parameter of pushColors
-  /*for(int i=0;i<W_PIXEL;i++)
-  {
-    tft.drawPixel(i, tgty, tft.readPixel(i, srcy));
-  }*/
+  tft.pushColors(lineData, W_PIXEL, true); //modified the second parameter of pushColors to uint_16 in the library
 }
 
 

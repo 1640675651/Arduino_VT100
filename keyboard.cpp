@@ -14,11 +14,13 @@ void KbdRptParser::OnKeyDown(uint8_t mod, uint8_t key)
       Serial.write('\e');
       Serial.write('[');
       Serial.write('C');
+      //Serial.write(0x13);
       break;
     case 80: //left
       Serial.write('\e');
       Serial.write('[');
       Serial.write('D');
+      //Serial.write(0x11);
       break;
     case 81: //down
       Serial.write('\e');

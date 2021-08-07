@@ -2,8 +2,9 @@
 uint16_t term_colors[8] = {BLACK_16, RED_16, GREEN_16, YELLOW_16, BLUE_16, VIOLET_16, CYAN_16, WHITE_16};
 extern uint16_t bg_color;
 
-//TODO: scrolling
 char ctlcode[20];
+extern uint8_t scroll_top;
+extern uint8_t scroll_bottom;
 
 bool isletter(char c)
 {
@@ -25,22 +26,7 @@ uint8_t read_ctl_code(char* ctlcode)
   ctlcode[ctlcode_len] = 0;
   return ctlcode_len;
 }
-/*
-void extract_param(char* ctlcode, uint8_t ctlcode_len, int8_t& param0, int8_t& param1)
-{
-  switch(ctlcode_len)
-  {
-    case 1: // no parameter
-      break;
-    case 2: // 1 parameter
-      param0 = ctlcode[0] - '0';
-      break;
-    case 4: // 2 parameters
-      param0 = ctlcode[0] - '0';
-      param1 = ctlcode[2] - '0';
-  }
-}
-*/
+
 void extract_param(char* ctlcode, uint8_t ctlcode_len, int8_t& param0, int8_t& param1)
 {
   bool two_param = false;
@@ -65,13 +51,31 @@ void extract_param(char* ctlcode, uint8_t ctlcode_len, int8_t& param0, int8_t& p
 }
 
 
-void parse_single_m_code(char* ctlcode, uint8_t cmdstart, uint8_t cmdend, Adafruit_TFTLCD &tft)
+void parse_single_m_code(char* ctlcode, uint8_t cmdstart, uint8_t cmdend, uint8_t& xtermcolor, Adafruit_TFTLCD &tft)
 {
-  if(cmdstart == cmdend) // empty command
-    return;
-    
   while(ctlcode[cmdstart] == '0')
     cmdstart++;
+
+  if(xtermcolor)//xterm color code are in format \033[38;5;xxxm format. This function will be called multiple times.
+  {
+    if(ctlcode[cmdstart] == '5')
+      return;
+
+    uint8_t color_no = 0;
+    for(uint8_t i=cmdstart;i<cmdend;i++)
+    {
+      color_no *= 10;
+      color_no += ctlcode[i] - '0';
+    }
+    if(xtermcolor == 1) //set text color
+    {
+      tft.setTextColor(pgm_read_word(&color256[color_no]));
+    }
+    else if(xtermcolor == 2) //set background color
+      bg_color = pgm_read_word(&color256[color_no]);
+    xtermcolor = 0;
+    return;
+  }
 
   if(cmdstart == cmdend) // characters in the command are all '0'
     reset_settings(tft);
@@ -94,9 +98,19 @@ void parse_single_m_code(char* ctlcode, uint8_t cmdstart, uint8_t cmdend, Adafru
   else if(cmdend - cmdstart == 2) //2-digit command
   {
     if(ctlcode[cmdstart] == '3') //set text color
-      terminalSetTextColor(ctlcode[cmdstart+1], tft);
+    {
+      if(ctlcode[cmdstart+1] == '8')
+        xtermcolor = 1;
+      else
+        terminalSetTextColor(ctlcode[cmdstart+1], tft);
+    }
     else if(ctlcode[cmdstart] == '4') //set background color
-      terminalSetBackgroundColor(ctlcode[cmdstart+1], tft);
+    {
+      if(ctlcode[cmdstart+1] == '8')
+        xtermcolor = 2;
+      else
+        terminalSetBackgroundColor(ctlcode[cmdstart+1], tft);
+    }
   }
   //else command of invalid length
   
@@ -107,13 +121,14 @@ void parse_m_code(char* ctlcode, uint8_t ctlcode_len, Adafruit_TFTLCD &tft)
 {
   uint8_t i = 0;
   uint8_t lasti = 0;
+  uint8_t setxtermcolor = 0;
   while(i<ctlcode_len)
   {
     while(ctlcode[i] != ';' && ctlcode[i] != 'm')
     {
       i++;
     }
-    parse_single_m_code(ctlcode, lasti, i, tft); //[lasti, i)
+    parse_single_m_code(ctlcode, lasti, i, setxtermcolor, tft); //[lasti, i)
     i++;
     lasti = i;
   }
@@ -149,7 +164,7 @@ void parse_ctl_code(Adafruit_TFTLCD &tft)
         else
           setCursorX(0, tft);
         break;
-      case 'H': //reset cursor
+      case 'H': //set cursor position
         if(param0 == 0 || param1 == 0)
           tft.setCursor(0, 0);
         else
@@ -176,6 +191,11 @@ void parse_ctl_code(Adafruit_TFTLCD &tft)
           setCursorY(param0-1, tft);
         else
           setCursorY(0, tft);
+        break;
+      case 'r': //set scrolling range
+        scroll_top = param0-1;
+        scroll_bottom = param1-1;
+        tft.setCursor(0,0);
         break;
     }
   }
