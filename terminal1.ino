@@ -2,11 +2,16 @@
 #include "lcd.h"
 #include "vt100_ctl.h"
 
-//#define SUPPORT_SCROLLING
+#define XON 0x11
+#define XOFF 0x13
+#define SERIAL_HIGH_WATER 16
+#define SERIAL_LOW_WATER 1
+
 // global variables
 char char_from_serial = -1;
 uint8_t cursor_x;
 uint8_t cursor_y;
+extern uint8_t scroll_bottom;
 // USB objects
 USB     Usb;
 HIDBoot<USB_HID_PROTOCOL_KEYBOARD>    HidKeyboard(&Usb);
@@ -15,12 +20,10 @@ KbdRptParser Prs;
 // LCD objects
 Adafruit_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
+bool xoff_enabled = false;
+
 void setup() {
-  #ifdef SUPPORT_SCROLLING
-  Serial.begin(1200);
-  #else
   Serial.begin(4800);
-  #endif
   lcdinit(tft);
   
   if (Usb.Init() == -1)
@@ -35,7 +38,33 @@ void loop() {
   if(Serial.available())
   {
     parse_serial_in(); 
+    flow_control();
     //debug();
+  }
+}
+
+inline void set_xoff()
+{
+  xoff_enabled = true;
+  Serial.write(XOFF);
+}
+
+inline void set_xon()
+{
+  xoff_enabled = false;
+  Serial.write(XON);  
+}
+
+inline void flow_control()
+{
+  int unreadBytes = Serial.available();
+  if(unreadBytes >= SERIAL_HIGH_WATER && xoff_enabled == false)
+  {
+    set_xoff();
+  }
+  if(unreadBytes < SERIAL_LOW_WATER && xoff_enabled == true)
+  {
+    set_xon();  
   }
 }
 
@@ -56,13 +85,15 @@ void parse_serial_in()
     }
     else if(ctlcode == 'D') //index: move cursor down and scroll screen up if cursor at the bottom
     {
+      if(!xoff_enabled)
+        set_xoff(); //scrolling is slow, pause host serial port to prevent serial buffer overflow
       moveCursorandScroll(1, tft);
     }
     else if(ctlcode == 'M') //revindex: move cursor up and scroll screen down if cursor at the top
     {
-      //Serial.write(19); //pause host serial port
+      if(!xoff_enabled)
+        set_xoff();
       moveCursorandScroll(-1, tft);
-      //Serial.write(17);
     }
   }
   else if(char_from_serial == 0)// I don't know why the linux machine will send a lot of 0's 
@@ -91,6 +122,10 @@ void parse_serial_in()
   }
   else// normal characters
   {
+    uint8_t x, y;
+    getCursorfromLCD(x, y, tft);
+    if(y == scroll_bottom && (char_from_serial == '\n') && !xoff_enabled)
+      set_xoff();
     overWrite(char_from_serial, tft);
   }
 }
@@ -98,6 +133,7 @@ void parse_serial_in()
 void debug()
 {
   char_from_serial = Serial.read();
+  Serial.print(char_from_serial);
   tft.print(char_from_serial);
   tft.print(' ');
   tft.print((uint8_t)char_from_serial);
@@ -109,9 +145,12 @@ note:
 usb host shield 使用spi，也就是uno上的11，12，13引脚。
 usb host shield 还会使用9，10号引脚作为spi的int和ss引脚。
 但是lcd需要使用2~9号引脚，导致了9号引脚冲突，lcd不能正常显示。
-通过修改usb host shield的库，把int改到其它引脚上（比如A5，也叫P19）可以消除冲突。
+通过修改usb host shield的库，把int（interrupt）改到其它引脚上（比如A5，也叫P19）可以消除冲突。
 严格来讲需要把usb host shield上的线改到相应的位置，但是int引脚似乎不太重要。
-github原文：
+更新：必须把int引脚接到arduino的其他引脚或者悬空。如果不更改连接，那么int,P9,LCD_D1会连到一起。int是输出模式，没有中断时持续输出1。而我们想用P9的输出与LCD通信，两个输出引脚输出不同会导致短路。
+运气好的话arduino的输出强于usb host shield，可以强行拉低P9，使LCD正常工作，但此方法极不稳定且可能损伤芯片。
+
+github关于更改引脚的原文：
 Furthermore it uses one pin as SS and one INT pin. These are by default located on pin 10 and 9 respectively. They can easily be reconfigured in case you need to use them for something else by cutting the jumper on the shield and then solder a wire from the pad to the new pin.
 
 After that you need modify the following entry in UsbCore.h:

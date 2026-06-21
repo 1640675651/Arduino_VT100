@@ -22,7 +22,7 @@ void lcdinit(Adafruit_TFTLCD &tft)
 {
   tft.begin(0x9341); //begin方法根据型号选择驱动
                      //如果不加参数，默认型号为0x9325
-  tft.setRotation(3); //设置屏幕方向   
+  tft.setRotation(ROTATION); //设置屏幕方向   
   tft.fillScreen(0x0);
   tft.setCursor(0,0); //设置光标位置，每个英文字符高8宽6
                        //Adafruit_TFTLCD类继承自Adafruit_GFX，而Adafruit_GFX类继承自Print
@@ -113,17 +113,25 @@ void overWrite(char c, Adafruit_TFTLCD &tft)
     getCursorfromLCD(X, Y, tft);
     if(Y == scroll_bottom) //scroll if cursor at bottom
     {
-      scrollUp(1, tft);
+      scrollUp(1, tft); // TODO: add xoff before scrolling
+      //scrollUpNative(1, tft);
       moveCursor(0, -1, tft);
     }
-    tft.print('\n'); 
+    tft.print('\n'); // printing \n moves cursor down by 1, so it's still on the scroll bottom
   }
   else if(c == '\r')//in adafruit_gfx, printing '\r' does not return the cursor to the leftmost position
     setCursorX(0, tft);
   else //normal character, first erase the existing character
   {
+    // TODO: implement scrolling triggered by line wrap
+    // now we just clamp it at scroll bottom or screen bottom
+    uint8_t X, Y0, Y1;
+    getCursorfromLCD(X, Y0, tft);
     tft.fillRect(tft.getCursorX(), tft.getCursorY(), CHAR_WIDTH, CHAR_HEIGHT, bg_color);
     tft.print(c);
+    getCursorfromLCD(X, Y1, tft);
+    if(Y1 > Y0 && (Y0 == scroll_bottom || Y0 == H_CHARS-1))
+      setCursorY(Y0, tft);
   }
 }
 
@@ -153,10 +161,12 @@ void moveCursorandScroll(int8_t dY, Adafruit_TFTLCD &tft)
     if(endY > scroll_bottom) // scroll up
     {
       scrollUp(endY - scroll_bottom, tft);
+      //scrollUpNative(endY - scroll_bottom, tft);
     }
     else if(endY < scroll_top) //scroll down
     {
       scrollDown(scroll_top - endY, tft);
+      //scrollDownNative(scroll_top - endY, tft);
     }
   }
   moveCursor(0, dY, tft);
@@ -184,15 +194,15 @@ void scrollDown(uint8_t d, Adafruit_TFTLCD &tft)
 
 void copyLineBlock(uint8_t srcY, uint8_t tgtY, Adafruit_TFTLCD &tft)
 {
-  uint8_t srcy = srcY<<3; //255 > 240 pixel in height
-  uint8_t tgty = tgtY<<3;
+  uint16_t srcy = (uint16_t)srcY<<3; // 255 > 240 pixel in height, it's ok to use uint8 in landscape mode
+  uint16_t tgty = (uint16_t)tgtY<<3; // but not enough for portrait mode
   for(uint8_t i=0;i<CHAR_HEIGHT;i++)
   {
     copyLine(srcy+i, tgty+i, tft);
   }
 }
 
-void copyLine(uint8_t srcy, uint8_t tgty, Adafruit_TFTLCD &tft)
+void copyLine(uint16_t srcy, uint16_t tgty, Adafruit_TFTLCD &tft)
 {
   readLineFast(srcy, tft);
   tft.setAddrWindow(0, tgty, W_PIXEL, tgty);
@@ -200,29 +210,7 @@ void copyLine(uint8_t srcy, uint8_t tgty, Adafruit_TFTLCD &tft)
 }
 
 
-/*void readLineFast(uint8_t y, Adafruit_TFTLCD &tft)
-{
-  tft.setAddrWindow(0,y,W_PIXEL-1,y);
-  uint8_t r=0;
-  uint8_t g=0;
-  uint8_t b=0;
-  CS_ACTIVE;
-  CD_COMMAND;
-  write8(0x2e);
-  setReadDirInline();
-  CD_DATA;
-  read8inline(r); //dummy read
-  for(int i=0;i<W_PIXEL;i++)
-  {
-    read8inline(r);
-    read8inline(g);
-    read8inline(b);
-    lineData[i] = tft.color565(r,g,b);
-  }
-  setWriteDirInline();
-  CS_IDLE;
-}*/
-void readLineFast(uint8_t y, Adafruit_TFTLCD &tft)
+void readLineFast(uint16_t y, Adafruit_TFTLCD &tft)
 {
   tft.setAddrWindow(0,y,W_PIXEL-1,y);
   uint8_t color8;
@@ -246,3 +234,50 @@ void readLineFast(uint8_t y, Adafruit_TFTLCD &tft)
   setWriteDirInline();
   CS_IDLE;
 }
+
+// tfa: top fixed area (in pixels)
+// vsa: vertical scrolling area
+// bfa: bottom fixed area
+void setScrollArea(uint16_t tfa, uint16_t vsa, uint16_t bfa) {
+  CS_ACTIVE;        // Pull Chip Select LOW
+  CD_COMMAND;       // Pull Command/Data LOW
+  write8(0x33);     // Send Vertical Scroll Definition Command
+
+  CD_DATA;          // Pull Command/Data HIGH for the payload
+  write8(tfa >> 8); 
+  write8(tfa & 0xFF);
+  write8(vsa >> 8); 
+  write8(vsa & 0xFF);
+  write8(bfa >> 8); 
+  write8(bfa & 0xFF);
+  CS_IDLE;          // Release Chip Select
+}
+
+// WIP: scrolling through ILI9341's native scrolling function
+// Only works for portrait mode, needs manual scroll offset + cursor tracking
+// Expect broken display when changing scrolling region
+// vsp: number of pixels rows to scroll
+//void scrollNative(uint16_t vsp) {
+//  CS_ACTIVE;
+//  CD_COMMAND;
+//  write8(0x37);     // Send Vertical Scrolling Start Address Command
+//
+//  CD_DATA;
+//  write8(vsp >> 8);
+//  write8(vsp & 0xFF);
+//  CS_IDLE;
+//}
+
+//void scrollUpNative(uint8_t d, Adafruit_TFTLCD &tft)
+//{
+//  scrollNative(d<<3);
+//  uint16_t y = (scroll_bottom-d+1) << 3;
+//  tft.fillRect(0, y, W_PIXEL, d<<3, bg_color);
+//}
+//
+//void scrollDownNative(uint8_t d, Adafruit_TFTLCD &tft)
+//{
+//  scrollNative(-(d<<3));
+//  uint16_t y = scroll_top << 3;
+//  tft.fillRect(0, y, W_PIXEL, d<<3, bg_color);
+//}

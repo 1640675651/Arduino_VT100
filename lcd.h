@@ -12,12 +12,23 @@
 #define LCD_CS   A3       
 #define LCD_RESET A4
 
-#define W_PIXEL 320
-#define H_PIXEL 240
+//#define PORTRAIT
+#ifdef PORTRAIT
+  #define W_PIXEL 240
+  #define H_PIXEL 320
+  #define W_CHARS 40
+  #define H_CHARS 40
+  #define ROTATION 0
+#else
+  #define W_PIXEL 320
+  #define H_PIXEL 240
+  #define W_CHARS 53
+  #define H_CHARS 30
+  #define ROTATION 1
+#endif
+
 #define CHAR_WIDTH 6
 #define CHAR_HEIGHT 8
-#define W_CHARS 53
-#define H_CHARS 30
 
 #define BLACK_16 0
 #define RED_16 0b1111100000000000
@@ -47,7 +58,11 @@ void moveCursorandScroll(int8_t dy, Adafruit_TFTLCD &tft);
 void scrollUp(uint8_t d, Adafruit_TFTLCD &tft);
 void scrollDown(uint8_t d, Adafruit_TFTLCD &tft);
 void copyLineBlock(uint8_t srcY, uint8_t tgtY, Adafruit_TFTLCD &tft);
-void copyLine(uint8_t srcy, uint8_t tgty, Adafruit_TFTLCD &tft);
-void readLineFast(uint8_t y, Adafruit_TFTLCD &tft);
+void copyLine(uint16_t srcy, uint16_t tgty, Adafruit_TFTLCD &tft);
+void readLineFast(uint16_t y, Adafruit_TFTLCD &tft);
+void setScrollArea(uint16_t tfa, uint16_t vsa, uint16_t bfa);
+void scrollNative(uint16_t vsp);
+void scrollUpNative(uint8_t d, Adafruit_TFTLCD &tft);
+void scrollDownNative(uint8_t d, Adafruit_TFTLCD &tft);
 
 #endif
